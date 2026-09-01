@@ -1,0 +1,44 @@
+# Panduan Setup — Aplikasi Android EWS Lereng (Build 100% Online, Tanpa Android Studio)
+
+Semua file konfigurasi proyek (yang biasanya digenerate Android Studio) sudah saya buatkan langsung, jadi kamu bisa build APK-nya sepenuhnya online lewat GitHub Actions — tidak perlu install apa pun di laptop.
+
+Kode ini BELUM saya compile/uji langsung (tidak ada Android SDK di lingkungan saya). Kalau proses build di GitHub Actions gagal, kirim screenshot error-nya ke saya, sama seperti waktu kita perbaiki Apps Script kemarin — biasanya cuma perlu 1-2 baris perbaikan.
+
+## Langkah-langkah
+
+1. **Ekstrak folder `EWSLerengApp`** dari zip ini di komputermu.
+
+2. **Buat akun GitHub** (kalau belum punya) di github.com — gratis.
+
+3. **Buat repository baru**:
+   - Klik "New repository"
+   - Nama bebas, misal `ews-lereng-app`
+   - Public atau Private — dua-duanya gratis untuk fitur GitHub Actions ini
+   - **Jangan** centang "Add README" (biar folder yang di-upload nanti tidak konflik)
+   - Klik Create repository
+
+4. **Upload seluruh isi folder `EWSLerengApp`** (termasuk folder tersembunyi `.github`) ke repository itu:
+   - Cara termudah: pakai GitHub Desktop (app gratis dari desktop.github.com), atau
+   - Lewat web: klik "Add file" > "Upload files", lalu drag seluruh isi folder (perhatikan: upload lewat browser kadang tidak menyertakan folder `.github` yang tersembunyi — kalau itu terjadi, pakai GitHub Desktop atau `git` dari terminal)
+
+5. **Klik tab "Actions"** di halaman repository-mu. Proses build akan otomatis berjalan begitu file ter-upload (ke branch `main`). Tunggu sampai muncul tanda centang hijau — biasanya 3-6 menit untuk build pertama kali.
+
+6. **Unduh APK-nya**: klik hasil build yang sudah selesai > scroll ke bawah ke bagian **"Artifacts"** > unduh `app-debug-apk` (berupa file .zip berisi file .apk di dalamnya, ekstrak dulu).
+
+7. **Install ke HP**: kirim file .apk itu ke HP-mu (lewat email/WhatsApp/Google Drive), buka file-nya, aktifkan "Izinkan install dari sumber ini" kalau diminta, lalu Install.
+
+## Kalau mau build ulang setelah mengubah kode
+
+Setiap kali kamu upload perubahan baru ke branch `main` di GitHub, build APK otomatis jalan lagi. Tidak perlu klik apa pun secara manual.
+
+## Yang perlu diketahui
+
+- **URL Apps Script** sudah saya isi di `Config.kt` (sama dengan yang dipakai dashboard).
+- **APK yang dihasilkan adalah versi "debug"** — cukup untuk dipakai sendiri/uji coba di lapangan. Kalau nanti mau disebar resmi lewat Play Store, prosesnya beda (perlu APK "release" bertanda tangan) — tapi untuk kebutuhan riset/tugas akhir, versi debug ini sudah cukup dan bisa langsung diinstall di HP mana saja.
+- **Foreground service**: begitu aplikasi dibuka, muncul notifikasi tetap ("Memantau...") — ini yang membuat aplikasi terus mengecek data tiap 1 menit walau aplikasi ditutup. Kalau notifikasi ini di-*swipe* hilang, servicenya ikut berhenti (batasan Android, bukan bug).
+- **Baterai**: beberapa merk HP (Xiaomi/Oppo/Vivo dll) punya pembatasan baterai agresif yang bisa mematikan background service. Kalau alarm tidak bunyi padahal seharusnya, cek pengaturan **Battery > No restrictions** untuk aplikasi ini.
+- **Tombol "Matikan Notifikasi"** ada di dalam aplikasi dan di notifikasi peringatannya sendiri. Keduanya menghentikan bunyi alarm & getar untuk level saat ini — tapi kalau kondisi memburuk lagi, alarm otomatis bunyi lagi.
+
+## Kalau tetap mau pakai Android Studio (opsional)
+
+Proyek ini juga bisa dibuka langsung di Android Studio seperti proyek biasa (File > Open, pilih folder `EWSLerengApp`) — tidak perlu langkah tambahan apa pun, karena semua file konfigurasi sudah lengkap.

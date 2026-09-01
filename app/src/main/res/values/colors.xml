@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#0A0F1C</color>
+    <color name="card">#121A2C</color>
+    <color name="brand">#2E6FF2</color>
+    <color name="aman">#22C55E</color>
+    <color name="waspada">#F0B90B</color>
+    <color name="siaga">#F0900A</color>
+    <color name="bahaya">#EF4444</color>
+    <color name="text">#E8ECF3</color>
+    <color name="text_dim">#8B95AC</color>
+</resources>
