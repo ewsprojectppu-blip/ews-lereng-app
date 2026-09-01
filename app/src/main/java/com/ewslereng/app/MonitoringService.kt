@@ -32,6 +32,7 @@ class MonitoringService : Service() {
 
         const val ACTION_SILENCE = "com.ewslereng.app.ACTION_SILENCE"
         const val ACTION_STOP_SERVICE = "com.ewslereng.app.ACTION_STOP_SERVICE"
+        const val ACTION_CHECK_NOW = "com.ewslereng.app.ACTION_CHECK_NOW"
 
         const val ACTION_DATA_UPDATED = "com.ewslereng.app.DATA_UPDATED"
         const val EXTRA_WORST_STATUS = "worst_status"
@@ -73,6 +74,12 @@ class MonitoringService : Service() {
             }
             ACTION_STOP_SERVICE -> {
                 stopSelf()
+            }
+            ACTION_CHECK_NOW -> {
+                scope.launch {
+                    val result = SensorRepository.fetchLatest()
+                    if (result is FetchResult.Success) handleData(result.data)
+                }
             }
         }
         return START_STICKY
