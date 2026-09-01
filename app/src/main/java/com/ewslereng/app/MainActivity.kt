@@ -44,7 +44,11 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermissionIfNeeded()
         startMonitoringService()
 
-        binding.btnRefresh.setOnClickListener { refreshNow() }
+        binding.btnRefresh.setOnClickListener {
+            refreshNow()
+            val checkIntent = Intent(this, MonitoringService::class.java).setAction(MonitoringService.ACTION_CHECK_NOW)
+            ContextCompat.startForegroundService(this, checkIntent)
+        }
         binding.btnSilence.setOnClickListener {
             val intent = Intent(this, MonitoringService::class.java).setAction(MonitoringService.ACTION_SILENCE)
             ContextCompat.startForegroundService(this, intent)
