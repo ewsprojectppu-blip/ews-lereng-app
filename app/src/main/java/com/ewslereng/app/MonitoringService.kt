@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.core.app.NotificationCompat
@@ -48,6 +49,7 @@ class MonitoringService : Service() {
     // cuma menghentikan bunyi untuk pembacaan-pembacaan yang sudah ada saat itu.
     private val alertedReadingKeys = mutableSetOf<String>()
     private var currentWorstStatus = "aman"
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -60,7 +62,27 @@ class MonitoringService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
         )
+        acquireWakeLock()
         startPolling()
+    }
+
+    private fun acquireWakeLock() {
+        // Tanpa wake lock ini, CPU HP bisa "tidur" saat layar mati/standby,
+        // dan siklus pengecekan data di latar belakang ikut berhenti sampai
+        // pengguna menyentuh HP lagi. Wake lock ini menahan CPU tetap aktif
+        // KHUSUS untuk proses servis ini (layar tetap boleh mati/hemat baterai).
+        try {
+            val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK, "EWSLereng::MonitoringWakeLock"
+            ).apply {
+                setReferenceCounted(false)
+                acquire(12 * 60 * 60 * 1000L /*maksimal 12 jam, jaga-jaga kalau lupa dilepas*/)
+            }
+        } catch (e: Exception) {
+            // Kalau gagal (jarang terjadi), servis tetap jalan seperti biasa,
+            // cuma tanpa jaminan tetap aktif saat layar mati.
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -91,14 +113,22 @@ class MonitoringService : Service() {
         super.onDestroy()
         pollJob?.cancel()
         AlarmPlayer.stop()
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (e: Exception) { }
     }
 
     private fun startPolling() {
         pollJob = scope.launch {
             while (isActive) {
-                val result = SensorRepository.fetchLatest()
-                if (result is FetchResult.Success) {
-                    handleData(result.data)
+                try {
+                    val result = SensorRepository.fetchLatest()
+                    if (result is FetchResult.Success) {
+                        handleData(result.data)
+                    }
+                } catch (e: Exception) {
+                    // Jangan biarkan satu error (misal AlarmPlayer gagal di background)
+                    // menghentikan loop pengecekan ini selamanya -- lanjut ke siklus berikutnya.
                 }
                 delay(Config.POLL_INTERVAL_SERVICE_MS)
             }
