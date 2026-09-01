@@ -30,9 +30,12 @@ object SensorRepository {
     suspend fun fetchLatest(): FetchResult = withContext(Dispatchers.IO) {
         var conn: HttpURLConnection? = null
         try {
-            val url = URL(Config.APPS_SCRIPT_URL + "?api=data")
+            val url = URL(Config.APPS_SCRIPT_URL + "?api=data&_=" + System.currentTimeMillis())
             conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
+            conn.useCaches = false
+            conn.setRequestProperty("Cache-Control", "no-cache, no-store")
+            conn.setRequestProperty("Pragma", "no-cache")
             conn.connectTimeout = 15000
             conn.readTimeout = 15000
             conn.instanceFollowRedirects = true
@@ -73,14 +76,17 @@ object SensorRepository {
     }
 
     /** Status terparah di antara semua sensor yang sudah pernah mengirim data. */
-    fun worstStatus(data: Map<String, SensorLatest>): String {
-        var worst = "aman"
-        var worstSev = 0
+    fun worstStatus(data: Map<String, SensorLatest>): String = worstEntry(data)?.status ?: "aman"
+
+    /** Entri sensor dengan status terparah (dipakai untuk tahu timestamp pembacaannya). */
+    fun worstEntry(data: Map<String, SensorLatest>): SensorLatest? {
+        var worst: SensorLatest? = null
+        var worstSev = -1
         for (s in data.values) {
             val sev = severityOf(s.status)
             if (sev > worstSev) {
                 worstSev = sev
-                worst = s.status ?: "aman"
+                worst = s
             }
         }
         return worst
