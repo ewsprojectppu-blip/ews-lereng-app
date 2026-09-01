@@ -42,12 +42,13 @@ class MonitoringService : Service() {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var pollJob: Job? = null
 
-    // Kumpulan "kunci pembacaan" (sensorId + timestamp) yang SUDAH pernah membunyikan alarm.
-    // Dicek per SENSOR, bukan cuma sensor yang paling parah -- supaya data baru dari sensor
-    // MANA PUN (walau levelnya sama/lebih rendah dari sensor lain yang sudah dialarm duluan)
-    // tetap terdeteksi sebagai kejadian baru dan membunyikan alarm lagi. "Matikan Notifikasi"
-    // cuma menghentikan bunyi untuk pembacaan-pembacaan yang sudah ada saat itu.
-    private val alertedReadingKeys = mutableSetOf<String>()
+    // Level severity TERTINGGI yang sudah pernah membunyikan alarm, PER SENSOR.
+    // Sensor yang levelnya belum berubah (masih di level yang sama/lebih rendah dari
+    // yang sudah pernah dialarm) TIDAK akan bunyi berulang tiap siklus polling --
+    // hanya sensor yang levelnya NAIK melebihi rekor terakhirnya yang membunyikan alarm.
+    // Begitu sensor kembali ke aman, catatannya dihapus (kalau naik lagi nanti, dianggap
+    // kejadian baru lagi).
+    private val alertedSeverityBySensor = mutableMapOf<String, Int>()
     private var currentWorstStatus = "aman"
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -145,9 +146,13 @@ class MonitoringService : Service() {
             Intent(ACTION_DATA_UPDATED).putExtra(EXTRA_WORST_STATUS, worst)
         )
 
+        // Sensor yang sudah kembali aman -> hapus catatannya, supaya kalau naik lagi
+        // nanti (kapan pun), dianggap kejadian baru dan membunyikan alarm lagi.
+        data.forEach { (id, s) ->
+            if (severityOf(s.status) == 0) alertedSeverityBySensor.remove(id)
+        }
+
         if (worstSev == 0) {
-            // Kondisi aman -> reset semua kunci pembacaan dan pastikan alarm tidak bunyi
-            alertedReadingKeys.clear()
             AlarmPlayer.stop()
             val nm = getSystemService(NotificationManager::class.java)
             nm.cancel(NOTIF_ID_ALERT)
@@ -155,25 +160,25 @@ class MonitoringService : Service() {
             return
         }
 
-        // Cek SEMUA sensor yang levelnya tidak aman (bukan cuma yang paling parah).
-        // Kalau ADA SATU SAJA sensor dengan pembacaan yang belum pernah dialarm sebelumnya,
-        // itu dianggap kejadian baru -> bunyikan alarm lagi.
-        val alertEntries = data.entries.filter { severityOf(it.value.status) > 0 }
-        val newReadings = alertEntries.filter { (id, s) ->
-            s.t != null && "$id|${s.t}" !in alertedReadingKeys
+        // Sensor mana saja yang levelnya NAIK melebihi rekor terakhir yang sudah dialarm
+        // untuk sensor itu -- bukan cuma sensor yang levelnya paling parah saat ini, dan
+        // bukan sekadar pembacaan baru di level yang SAMA (itu tidak perlu bunyi ulang).
+        val escalated = data.filter { (id, s) ->
+            val sev = severityOf(s.status)
+            sev > 0 && sev > (alertedSeverityBySensor[id] ?: 0)
         }
 
-        if (newReadings.isNotEmpty()) {
+        if (escalated.isNotEmpty()) {
             AlarmPlayer.start()
             val vibrator = getSystemService(VIBRATOR_SERVICE) as? Vibrator
             vibrator?.vibrate(
                 VibrationEffect.createWaveform(longArrayOf(0, 500, 300, 500, 300, 500, 300, 500), 0)
             )
             showAlertNotification(worst)
-            newReadings.forEach { (id, s) -> alertedReadingKeys.add("$id|${s.t}") }
+            escalated.forEach { (id, s) -> alertedSeverityBySensor[id] = severityOf(s.status) }
         }
         getSystemService(NotificationManager::class.java)
-            .notify(NOTIF_ID_PERSISTENT, buildPersistentNotification(worst, muted = newReadings.isEmpty()))
+            .notify(NOTIF_ID_PERSISTENT, buildPersistentNotification(worst, muted = escalated.isEmpty()))
     }
 
     private fun createNotificationChannels() {
