@@ -40,9 +40,12 @@ class MonitoringService : Service() {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var pollJob: Job? = null
 
-    // Level tertinggi yang sudah "dimatikan" (dimatikan alarmnya) oleh pengguna.
-    // Kalau kondisi memburuk MELEBIHI level ini, alarm dibunyikan lagi.
-    private var acknowledgedSeverity = 0
+    // Timestamp pembacaan (dari sensor terparah) yang TERAKHIR kali membunyikan alarm.
+    // Kalau ada pembacaan baru (timestamp beda) yang masih waspada/siaga/bahaya, alarm
+    // dibunyikan lagi -- meski levelnya sama seperti sebelumnya. "Matikan Notifikasi"
+    // cuma menghentikan bunyi untuk pembacaan SAAT ITU, bukan mematikan alarm selamanya
+    // untuk level yang sama.
+    private var lastAlertedTimestamp: String? = null
     private var currentWorstStatus = "aman"
 
     override fun onCreate() {
@@ -64,7 +67,6 @@ class MonitoringService : Service() {
             ACTION_SILENCE -> {
                 AlarmPlayer.stop()
                 (getSystemService(VIBRATOR_SERVICE) as? Vibrator)?.cancel()
-                acknowledgedSeverity = severityOf(currentWorstStatus)
                 val nm = getSystemService(NotificationManager::class.java)
                 nm.cancel(NOTIF_ID_ALERT)
                 nm.notify(NOTIF_ID_PERSISTENT, buildPersistentNotification(currentWorstStatus, muted = true))
@@ -97,7 +99,8 @@ class MonitoringService : Service() {
     }
 
     private fun handleData(data: Map<String, SensorLatest>) {
-        val worst = SensorRepository.worstStatus(data)
+        val worstEntry = SensorRepository.worstEntry(data)
+        val worst = worstEntry?.status ?: "aman"
         val worstSev = severityOf(worst)
         currentWorstStatus = worst
 
@@ -106,8 +109,8 @@ class MonitoringService : Service() {
         )
 
         if (worstSev == 0) {
-            // Kondisi aman -> reset penanda "sudah dimatikan" dan pastikan alarm tidak bunyi
-            acknowledgedSeverity = 0
+            // Kondisi aman -> reset penanda pembacaan terakhir dan pastikan alarm tidak bunyi
+            lastAlertedTimestamp = null
             AlarmPlayer.stop()
             val nm = getSystemService(NotificationManager::class.java)
             nm.cancel(NOTIF_ID_ALERT)
@@ -115,18 +118,22 @@ class MonitoringService : Service() {
             return
         }
 
-        // Kondisi tidak aman: kalau levelnya lebih parah dari yang terakhir "dimatikan" pengguna,
-        // bunyikan alarm + getar + tampilkan notifikasi peringatan lagi.
-        if (worstSev > acknowledgedSeverity) {
+        // Kondisi tidak aman: kalau ini pembacaan BARU (timestamp beda dari yang terakhir
+        // dialarm) -- baik levelnya sama, naik, atau turun tapi masih tidak aman -- bunyikan
+        // alarm lagi. "Matikan Notifikasi" cuma menghentikan alarm untuk pembacaan saat itu,
+        // bukan mematikannya selamanya untuk level yang sama.
+        val isNewReading = worstEntry?.t != null && worstEntry.t != lastAlertedTimestamp
+        if (isNewReading) {
             AlarmPlayer.start()
             val vibrator = getSystemService(VIBRATOR_SERVICE) as? Vibrator
             vibrator?.vibrate(
                 VibrationEffect.createWaveform(longArrayOf(0, 500, 300, 500, 300, 500, 300, 500), 0)
             )
             showAlertNotification(worst)
+            lastAlertedTimestamp = worstEntry?.t
         }
         getSystemService(NotificationManager::class.java)
-            .notify(NOTIF_ID_PERSISTENT, buildPersistentNotification(worst, muted = worstSev <= acknowledgedSeverity))
+            .notify(NOTIF_ID_PERSISTENT, buildPersistentNotification(worst, muted = !isNewReading))
     }
 
     private fun createNotificationChannels() {
