@@ -1,70 +1,33 @@
-plugins {
-    id 'com.android.application' version '8.5.0' apply false
-    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
-}
+name: Build APK
 
-android.useAndroidX=true
-kotlin.code.style=official
-android.nonTransitiveRClass=true
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
-# Panduan Setup — Aplikasi Android EWS Lereng (Build 100% Online, Tanpa Android Studio)
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
 
-Semua file konfigurasi proyek (yang biasanya digenerate Android Studio) sudah saya buatkan langsung, jadi kamu bisa build APK-nya sepenuhnya online lewat GitHub Actions — tidak perlu install apa pun di laptop.
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-Kode ini BELUM saya compile/uji langsung (tidak ada Android SDK di lingkungan saya). Kalau proses build di GitHub Actions gagal, kirim screenshot error-nya ke saya, sama seperti waktu kita perbaiki Apps Script kemarin — biasanya cuma perlu 1-2 baris perbaikan.
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
-## Langkah-langkah
+      - name: Build APK (debug)
+        run: gradle assembleDebug
 
-1. **Ekstrak folder `EWSLerengApp`** dari zip ini di komputermu.
-
-2. **Buat akun GitHub** (kalau belum punya) di github.com — gratis.
-
-3. **Buat repository baru**:
-   - Klik "New repository"
-   - Nama bebas, misal `ews-lereng-app`
-   - Public atau Private — dua-duanya gratis untuk fitur GitHub Actions ini
-   - **Jangan** centang "Add README" (biar folder yang di-upload nanti tidak konflik)
-   - Klik Create repository
-
-4. **Upload seluruh isi folder `EWSLerengApp`** (termasuk folder tersembunyi `.github`) ke repository itu:
-   - Cara termudah: pakai GitHub Desktop (app gratis dari desktop.github.com), atau
-   - Lewat web: klik "Add file" > "Upload files", lalu drag seluruh isi folder (perhatikan: upload lewat browser kadang tidak menyertakan folder `.github` yang tersembunyi — kalau itu terjadi, pakai GitHub Desktop atau `git` dari terminal)
-
-5. **Klik tab "Actions"** di halaman repository-mu. Proses build akan otomatis berjalan begitu file ter-upload (ke branch `main`). Tunggu sampai muncul tanda centang hijau — biasanya 3-6 menit untuk build pertama kali.
-
-6. **Unduh APK-nya**: klik hasil build yang sudah selesai > scroll ke bawah ke bagian **"Artifacts"** > unduh `app-debug-apk` (berupa file .zip berisi file .apk di dalamnya, ekstrak dulu).
-
-7. **Install ke HP**: kirim file .apk itu ke HP-mu (lewat email/WhatsApp/Google Drive), buka file-nya, aktifkan "Izinkan install dari sumber ini" kalau diminta, lalu Install.
-
-## Kalau mau build ulang setelah mengubah kode
-
-Setiap kali kamu upload perubahan baru ke branch `main` di GitHub, build APK otomatis jalan lagi. Tidak perlu klik apa pun secara manual.
-
-## Yang perlu diketahui
-
-- **URL Apps Script** sudah saya isi di `Config.kt` (sama dengan yang dipakai dashboard).
-- **APK yang dihasilkan adalah versi "debug"** — cukup untuk dipakai sendiri/uji coba di lapangan. Kalau nanti mau disebar resmi lewat Play Store, prosesnya beda (perlu APK "release" bertanda tangan) — tapi untuk kebutuhan riset/tugas akhir, versi debug ini sudah cukup dan bisa langsung diinstall di HP mana saja.
-- **Foreground service**: begitu aplikasi dibuka, muncul notifikasi tetap ("Memantau...") — ini yang membuat aplikasi terus mengecek data tiap 1 menit walau aplikasi ditutup. Kalau notifikasi ini di-*swipe* hilang, servicenya ikut berhenti (batasan Android, bukan bug).
-- **Baterai**: beberapa merk HP (Xiaomi/Oppo/Vivo dll) punya pembatasan baterai agresif yang bisa mematikan background service. Kalau alarm tidak bunyi padahal seharusnya, cek pengaturan **Battery > No restrictions** untuk aplikasi ini.
-- **Tombol "Matikan Notifikasi"** ada di dalam aplikasi dan di notifikasi peringatannya sendiri. Keduanya menghentikan bunyi alarm & getar untuk level saat ini — tapi kalau kondisi memburuk lagi, alarm otomatis bunyi lagi.
-
-## Kalau tetap mau pakai Android Studio (opsional)
-
-Proyek ini juga bisa dibuka langsung di Android Studio seperti proyek biasa (File > Open, pilih folder `EWSLerengApp`) — tidak perlu langkah tambahan apa pun, karena semua file konfigurasi sudah lengkap.
-
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-rootProject.name = "EWS Lereng"
-include ':app'
+      - name: Unggah APK sebagai hasil build
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
