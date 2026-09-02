@@ -17,7 +17,11 @@ object Config {
     )
 
     // Jeda pengecekan data di background service (mengikuti kecepatan ESP32 mengirim: 1 menit saat waspada+)
-    const val POLL_INTERVAL_SERVICE_MS = 60_000L
+        // Jeda pengecekan data di background service -- ADAPTIF, mengikuti prinsip yang sama
+    // dengan ESP32 (jarang saat aman, sering saat ada yang tidak aman), supaya baterai HP
+    // tidak boros terkuras oleh pengecekan yang sebenarnya tidak perlu sesering itu.
+    const val POLL_INTERVAL_SERVICE_AMAN_MS = 300_000L   // 5 menit, saat semua sensor aman
+    const val POLL_INTERVAL_SERVICE_ALERT_MS = 60_000L   // 1 menit, saat ada yang tidak ama
     // Jeda refresh tampilan saat aplikasi sedang dibuka (lebih sering, untuk UI yang responsif)
     const val POLL_INTERVAL_UI_MS = 15_000L
 }
