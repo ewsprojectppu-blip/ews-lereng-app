@@ -7,8 +7,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.view.LayoutInflater
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -43,6 +46,7 @@ class MainActivity : AppCompatActivity() {
         buildSensorCards()
         requestNotificationPermissionIfNeeded()
         startMonitoringService()
+        requestIgnoreBatteryOptimizations()
 
         binding.btnRefresh.setOnClickListener {
             refreshNow()
@@ -109,7 +113,7 @@ class MainActivity : AppCompatActivity() {
             "bahaya" -> "Pergeseran melewati ambang bahaya, segera ambil tindakan"
             else -> "Menunggu data pertama dari sensor lapangan"
         }
-        binding.tvLastUpdate.text = "Update terakhir: ${data.values.maxOfOrNull { it.t ?: "" } ?: "-"}"
+        binding.tvLastUpdate.text = "Update terakhir: ${formatWaktu(data.values.maxByOrNull { it.t ?: "" }?.t)}"
 
         for (id in Config.SENSOR_IDS) {
             val view = sensorViews[id] ?: continue
@@ -123,8 +127,32 @@ class MainActivity : AppCompatActivity() {
                 view.tvSensorStatus.text = labelOf(s.status)
                 view.tvSensorStatus.setBackgroundColor(colorFor(s.status) and 0x33FFFFFF)
                 view.tvSensorStatus.setTextColor(colorFor(s.status))
-                view.tvSensorDetail.text = "Pergeseran: ${"%.2f".format(s.pergeseran)}°   |   Update: ${s.t}"
+                view.tvSensorDetail.text = "Pergeseran: ${"%.2f".format(s.pergeseran)}°   |   Update: ${formatWaktu(s.t)}"
             }
+        }
+    }
+
+    /** Ubah timestamp ISO (UTC, dari server) jadi format lokal + keterangan "berapa lama lalu". */
+    private fun formatWaktu(isoString: String?): String {
+        if (isoString.isNullOrBlank()) return "-"
+        return try {
+            val instant = java.time.Instant.parse(isoString)
+            val zoned = instant.atZone(java.time.ZoneId.systemDefault())
+            val formatter = java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm:ss", java.util.Locale("id", "ID"))
+            "${zoned.format(formatter)} (${relativeTime(instant)})"
+        } catch (e: Exception) {
+            isoString
+        }
+    }
+
+    private fun relativeTime(instant: java.time.Instant): String {
+        val diffSec = (System.currentTimeMillis() - instant.toEpochMilli()) / 1000
+        return when {
+            diffSec < 0 -> "baru saja"
+            diffSec < 60 -> "$diffSec dtk lalu"
+            diffSec < 3600 -> "${diffSec / 60} mnt lalu"
+            diffSec < 86400 -> "${diffSec / 3600} jam lalu"
+            else -> "${diffSec / 86400} hari lalu"
         }
     }
 
@@ -139,6 +167,25 @@ class MainActivity : AppCompatActivity() {
     private fun startMonitoringService() {
         val intent = Intent(this, MonitoringService::class.java)
         ContextCompat.startForegroundService(this, intent)
+    }
+
+    @Suppress("BatteryLife")
+    private fun requestIgnoreBatteryOptimizations() {
+        // Minta HP mengecualikan aplikasi ini dari mode hemat baterai standar Android,
+        // supaya siklus pengecekan latar belakang tidak dibekukan sistem saat layar mati.
+        // Ini permintaan resmi lewat Android sendiri (bukan trik) -- pengguna akan melihat
+        // dialog izin dari sistem dan bisa menyetujui/menolaknya.
+        try {
+            val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
+        } catch (e: Exception) {
+            // Kalau tidak didukung HP-nya, lewati saja -- tidak fatal.
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {
