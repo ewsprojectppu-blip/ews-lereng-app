@@ -37,6 +37,9 @@ class MonitoringService : Service() {
 
         const val ACTION_DATA_UPDATED = "com.ewslereng.app.DATA_UPDATED"
         const val EXTRA_WORST_STATUS = "worst_status"
+
+        private const val PREFS_NAME = "ews_monitoring_prefs"
+        private const val PREFS_KEY_ALERTED = "alerted_severity_by_sensor"
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -48,12 +51,38 @@ class MonitoringService : Service() {
     // hanya sensor yang levelnya NAIK melebihi rekor terakhirnya yang membunyikan alarm.
     // Begitu sensor kembali ke aman, catatannya dihapus (kalau naik lagi nanti, dianggap
     // kejadian baru lagi).
+    //
+    // PENTING: disimpan ke SharedPreferences (bukan cuma variabel di memori), supaya kalau
+    // proses aplikasi ini di-restart oleh sistem Android (hal yang wajar terjadi di latar
+    // belakang, di luar kendali kita), catatannya TIDAK hilang/reset -- yang tadinya
+    // menyebabkan data LAMA yang sebenarnya sudah pernah dialarm, dianggap kejadian baru
+    // lagi dan membunyikan alarm ulang untuk data yang sama sekali tidak berubah.
     private val alertedSeverityBySensor = mutableMapOf<String, Int>()
     private var currentWorstStatus = "aman"
     private var wakeLock: PowerManager.WakeLock? = null
 
+    private fun prefs() = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+
+    private fun loadAlertedSeverity() {
+        alertedSeverityBySensor.clear()
+        val raw = prefs().getString(PREFS_KEY_ALERTED, null) ?: return
+        raw.split(",").forEach { entry ->
+            val parts = entry.split(":")
+            if (parts.size == 2) {
+                val sev = parts[1].toIntOrNull()
+                if (sev != null) alertedSeverityBySensor[parts[0]] = sev
+            }
+        }
+    }
+
+    private fun saveAlertedSeverity() {
+        val raw = alertedSeverityBySensor.entries.joinToString(",") { "${it.key}:${it.value}" }
+        prefs().edit().putString(PREFS_KEY_ALERTED, raw).apply()
+    }
+
     override fun onCreate() {
         super.onCreate()
+        loadAlertedSeverity()
         createNotificationChannels()
         val notification = buildPersistentNotification("aman", muted = false)
         ServiceCompat.startForeground(
@@ -131,7 +160,11 @@ class MonitoringService : Service() {
                     // Jangan biarkan satu error (misal AlarmPlayer gagal di background)
                     // menghentikan loop pengecekan ini selamanya -- lanjut ke siklus berikutnya.
                 }
-                delay(Config.POLL_INTERVAL_SERVICE_MS)
+                // Jeda berikutnya mengikuti status TERKINI: lebih jarang (hemat baterai)
+                // kalau semua sensor aman, lebih sering kalau ada yang tidak aman.
+                val nextDelay = if (currentWorstStatus == "aman")
+                    Config.POLL_INTERVAL_SERVICE_AMAN_MS else Config.POLL_INTERVAL_SERVICE_ALERT_MS
+                delay(nextDelay)
             }
         }
     }
@@ -148,11 +181,15 @@ class MonitoringService : Service() {
 
         // Sensor yang sudah kembali aman -> hapus catatannya, supaya kalau naik lagi
         // nanti (kapan pun), dianggap kejadian baru dan membunyikan alarm lagi.
+        var catatanBerubah = false
         data.forEach { (id, s) ->
-            if (severityOf(s.status) == 0) alertedSeverityBySensor.remove(id)
+            if (severityOf(s.status) == 0 && alertedSeverityBySensor.remove(id) != null) {
+                catatanBerubah = true
+            }
         }
 
         if (worstSev == 0) {
+            if (catatanBerubah) saveAlertedSeverity()
             AlarmPlayer.stop()
             val nm = getSystemService(NotificationManager::class.java)
             nm.cancel(NOTIF_ID_ALERT)
@@ -176,7 +213,9 @@ class MonitoringService : Service() {
             )
             showAlertNotification(worst)
             escalated.forEach { (id, s) -> alertedSeverityBySensor[id] = severityOf(s.status) }
+            catatanBerubah = true
         }
+        if (catatanBerubah) saveAlertedSeverity()
         getSystemService(NotificationManager::class.java)
             .notify(NOTIF_ID_PERSISTENT, buildPersistentNotification(worst, muted = escalated.isEmpty()))
     }
